@@ -48,8 +48,18 @@ export default function ProviderServicesPage() {
         api.get('/services/categories'),
       ]);
 
-      if (srvRes.data.success) setServices(srvRes.data.data);
-      if (catRes.data.success) setCategories(catRes.data.data);
+      if (srvRes.data && srvRes.data.success) setServices(srvRes.data.data || []);
+
+      // Normalize categories to ensure we have _id and name fields regardless of API shape
+      const catPayload = catRes.data?.data ?? (catRes.data ?? []);
+      const normalizedCats = Array.isArray(catPayload)
+        ? catPayload.map((c) => ({
+            _id: c._id ?? c.id ?? c.category_id ?? c.categoryId ?? String(Math.random()),
+            name: c.name ?? c.title ?? c.label ?? 'Unnamed',
+          }))
+        : [];
+
+      if (catRes.data && catRes.data.success) setCategories(normalizedCats);
     } catch (err) {
       console.error('Failed to load services:', err);
     } finally {
@@ -60,6 +70,14 @@ export default function ProviderServicesPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // When categories are loaded and modal is open for adding a new service,
+  // ensure the select has a sensible default value so the user sees categories
+  useEffect(() => {
+    if (isModalOpen && categories.length > 0 && !formData.category_id) {
+      setFormData((prev) => ({ ...prev, category_id: categories[0]._id }));
+    }
+  }, [isModalOpen, categories]);
 
   const handleOpenAddModal = () => {
     setEditingService(null);
@@ -76,10 +94,16 @@ export default function ProviderServicesPage() {
 
   const handleOpenEditModal = (service) => {
     setEditingService(service);
+    // service may store category as an object or an id string; handle both
+    const categoryId =
+      (service.category && (service.category._id || service.category.id)) ||
+      service.category_id ||
+      '';
+
     setFormData({
       title: service.title || '',
       description: service.description || '',
-      category_id: service.category_id || '',
+      category_id: categoryId,
       price: service.price || '',
       duration: service.duration || '',
       location: service.location || '',
@@ -98,12 +122,12 @@ export default function ProviderServicesPage() {
     try {
       if (editingService) {
         const res = await api.put(`/services/${editingService._id}`, formData);
-        if (res.data.success) {
+        if (res.data && res.data.success) {
           addToast('Service listing updated successfully!', 'success');
         }
       } else {
         const res = await api.post('/services', formData);
-        if (res.data.success) {
+        if (res.data && res.data.success) {
           addToast('New service published to FIXIT marketplace!', 'success');
         }
       }
@@ -120,7 +144,7 @@ export default function ProviderServicesPage() {
     if (!serviceToDelete) return;
     try {
       const res = await api.delete(`/services/${serviceToDelete._id}`);
-      if (res.data.success) {
+      if (res.data && res.data.success) {
         addToast('Service removed from marketplace.', 'success');
         setServiceToDelete(null);
         fetchData();
@@ -145,7 +169,7 @@ export default function ProviderServicesPage() {
 
         <button
           onClick={handleOpenAddModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold text-xs shadow-lg shadow-orange-500/20 transition self-start sm:self-auto"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold text-xs shadow-lg shadow-orange-500/20"
         >
           <Plus className="w-4 h-4" />
           <span>Add New Service</span>
