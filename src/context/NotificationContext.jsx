@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api/axios.js';
 import { useAuth } from './AuthContext.jsx';
 
@@ -9,18 +9,27 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState([]);
+  const toastTimers = useRef(new Map());
 
   // Add toast helper
   const addToast = useCallback((message, type = 'info', duration = 4000) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
+    const t = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
+      toastTimers.current.delete(id);
     }, duration);
+    toastTimers.current.set(id, t);
+    return id;
   }, []);
 
   const removeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+    const t = toastTimers.current.get(id);
+    if (t) {
+      clearTimeout(t);
+      toastTimers.current.delete(id);
+    }
   }, []);
 
   // Fetch notifications
@@ -28,12 +37,25 @@ export const NotificationProvider = ({ children }) => {
     if (!isAuthenticated) return;
     try {
       const res = await api.get('/notifications');
-      if (res.data.success) {
-        setNotifications(res.data.data);
-        setUnreadCount(res.data.unreadCount);
+      const success = !!res.data?.success;
+      const payload = res.data?.data ?? res.data;
+
+      if (success && payload) {
+        if (Array.isArray(payload)) {
+          setNotifications(payload);
+          setUnreadCount(0);
+        } else {
+          setNotifications(payload.notifications ?? payload.items ?? []);
+          setUnreadCount(payload.unreadCount ?? res.data.unreadCount ?? 0);
+        }
+      } else if (!success && Array.isArray(payload)) {
+        // Some APIs may return array directly without a success flag
+        setNotifications(payload);
+        setUnreadCount(0);
       }
     } catch (err) {
-      // Ignore background notification poll errors
+      // Ignore background notification poll errors but log for debugging
+      console.error('Notification fetch error:', err);
     }
   }, [isAuthenticated]);
 
@@ -41,9 +63,9 @@ export const NotificationProvider = ({ children }) => {
   const markAsRead = async (id) => {
     try {
       const res = await api.patch(`/notifications/${id}/read`);
-      if (res.data.success) {
+      if (res.data?.success) {
         setNotifications((prev) =>
-          prev.map((n) => (n._id === id ? { ...n, is_read: true } : n))
+          prev.map((n) => (n._id === id || n.id === id ? { ...n, is_read: true } : n))
         );
         setUnreadCount((prev) => Math.max(0, prev - 1));
       }
@@ -56,7 +78,7 @@ export const NotificationProvider = ({ children }) => {
   const markAllAsRead = async () => {
     try {
       const res = await api.patch('/notifications/read-all');
-      if (res.data.success) {
+      if (res.data?.success) {
         setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
         setUnreadCount(0);
         addToast('All notifications marked as read', 'success');
@@ -76,6 +98,14 @@ export const NotificationProvider = ({ children }) => {
       setUnreadCount(0);
     }
   }, [isAuthenticated, fetchNotifications]);
+
+  useEffect(() => {
+    return () => {
+      // clear any pending toast timers on unmount
+      for (const t of toastTimers.current.values()) clearTimeout(t);
+      toastTimers.current.clear();
+    };
+  }, []);
 
   const value = {
     notifications,
