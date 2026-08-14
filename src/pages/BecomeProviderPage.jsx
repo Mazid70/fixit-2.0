@@ -16,9 +16,10 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 import { useNotifications } from '../context/NotificationContext.jsx';
 import LoadingSpinner from '../components/common/LoadingSpinner.jsx';
+import api from '../api/axios.js';
 
 export default function BecomeProviderPage() {
-  const { user, isAuthenticated, refreshUser } = useAuth();
+  const { user, isAuthenticated, refreshUser, logout } = useAuth();
   const { addToast } = useNotifications();
   const navigate = useNavigate();
 
@@ -46,30 +47,39 @@ export default function BecomeProviderPage() {
     setLoading(true);
 
     try {
-      const token = localStorage.getItem('fixit_auth_token');
-      const res = await fetch('/api/users/become-provider', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
-      });
+      // Use axios instance so Authorization header from interceptor is applied
+      const res = await api.post('/users/become-provider', formData);
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Application submission failed.');
+      if (res.status === 401) {
+        throw new Error('Not authorized, invalid or expired token');
+      }
+
+      if (res.data && !res.data.success) {
+        throw new Error(res.data.message || 'Application submission failed.');
       }
 
       // Refresh user context so user gets updated role
       if (refreshUser) {
-        await refreshUser();
+        try {
+          await refreshUser();
+        } catch (err) {
+          // ignore refresh errors
+        }
       }
 
       setSubmitted(true);
       addToast('Application submitted to FIXIT verification admins!', 'success');
     } catch (err) {
-      setError(err.message || 'Failed to submit application. Please try again.');
+      // Handle 401 specifically
+      const status = err.response?.status;
+      if (status === 401) {
+        addToast('Session expired or invalid token. Please sign in again.', 'error');
+        // clear client-side auth and redirect to login
+        if (logout) logout();
+        navigate('/login');
+      } else {
+        setError(err.message || 'Failed to submit application. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -131,9 +141,7 @@ export default function BecomeProviderPage() {
             <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h2 className="text-2xl font-bold text-white font-['Space_Grotesk']">
-              Application Submitted to Admin!
-            </h2>
+            <h2 className="text-2xl font-bold text-white font-['Space_Grotesk']">Application Submitted to Admin!</h2>
             <p className="text-xs sm:text-sm text-neutral-300 max-w-md mx-auto leading-relaxed">
               Your service partner verification request has been queued. An admin will review your credentials shortly. You can now access your provider dashboard and start setting up your listings.
             </p>
@@ -150,42 +158,27 @@ export default function BecomeProviderPage() {
         ) : (
           <>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white font-['Space_Grotesk']">
-                Submit Partner Application
-              </h2>
-              <p className="text-xs text-neutral-400 mt-1">
-                Fill in your trade details. Admin will verify your information and activate your certified badge.
-              </p>
+              <h2 className="text-xl sm:text-2xl font-bold text-white font-['Space_Grotesk']">Submit Partner Application</h2>
+              <p className="text-xs text-neutral-400 mt-1">Fill in your trade details. Admin will verify your information and activate your certified badge.</p>
             </div>
 
             {!isAuthenticated && (
               <div className="p-4 bg-orange-500/10 border border-orange-500/25 rounded-2xl flex items-center justify-between gap-4">
                 <div className="text-xs">
                   <p className="font-bold text-orange-400">Account required</p>
-                  <p className="text-neutral-300 text-[11px]">
-                    Please sign in or create a standard user account before submitting your partner application.
-                  </p>
+                  <p className="text-neutral-300 text-[11px]">Please sign in or create a standard user account before submitting your partner application.</p>
                 </div>
-                <Link
-                  to="/login"
-                  className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold whitespace-nowrap shadow-md"
-                >
-                  Sign In First
-                </Link>
+                <Link to="/login" className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold whitespace-nowrap shadow-md">Sign In First</Link>
               </div>
             )}
 
             {error && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium">
-                {error}
-              </div>
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium">{error}</div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                  Business / Trade Name *
-                </label>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">Business / Trade Name *</label>
                 <div className="relative">
                   <Briefcase className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
@@ -201,9 +194,7 @@ export default function BecomeProviderPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                    Primary Service Category *
-                  </label>
+                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">Primary Service Category *</label>
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
@@ -219,9 +210,7 @@ export default function BecomeProviderPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                    Operating Metro / Dhaka Area *
-                  </label>
+                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">Operating Metro / Dhaka Area *</label>
                   <div className="relative">
                     <MapPin className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
@@ -238,9 +227,7 @@ export default function BecomeProviderPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                    National ID / Trade License No. (Optional)
-                  </label>
+                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">National ID / Trade License No. (Optional)</label>
                   <div className="relative">
                     <FileText className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
@@ -254,9 +241,7 @@ export default function BecomeProviderPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                    Years of Field Experience
-                  </label>
+                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">Years of Field Experience</label>
                   <select
                     value={formData.experience_years}
                     onChange={(e) => setFormData({ ...formData, experience_years: e.target.value })}
@@ -271,9 +256,7 @@ export default function BecomeProviderPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                  About Your Qualifications & Services
-                </label>
+                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">About Your Qualifications & Services</label>
                 <textarea
                   rows={3}
                   value={formData.description}
@@ -286,7 +269,7 @@ export default function BecomeProviderPage() {
               <button
                 type="submit"
                 disabled={loading || !isAuthenticated}
-                className="w-full py-3.5 px-4 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-[0.99] text-white font-bold text-xs sm:text-sm shadow-lg shadow-orange-500/25 transition flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+                className="w-full py-3.5 px-4 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-[0.99] text-white font-bold text-xs sm:text-sm shadow-lg shadow-orange-500/25 transition flex items-center justify-center gap-3"
               >
                 {loading ? (
                   <LoadingSpinner size="sm" />
