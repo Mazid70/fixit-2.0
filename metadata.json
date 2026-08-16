@@ -1,0 +1,6 @@
+{
+  "name": "FIXIT",
+  "description": "Full-stack MERN on-demand service marketplace and management platform with user, provider, and admin portals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
