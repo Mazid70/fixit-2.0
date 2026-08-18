@@ -203,20 +203,17 @@ export const updateProviderVerification = async (req, res, next) => {
       });
     }
 
-    const provider = await dbStore.getProviderById(req.params.id);
-    if (!provider) {
+    const updatedProvider = await dbStore.updateProviderVerification(req.params.id, status);
+    if (!updatedProvider) {
       return res.status(404).json({
         success: false,
         message: 'Provider profile not found',
       });
     }
 
-    provider.verification_status = status;
-    provider.updated_at = new Date();
-
     // Send notification to provider
     await dbStore.createNotification({
-      user_id: provider.user_id,
+      user_id: updatedProvider.user_id,
       title: `Provider Verification: ${status.toUpperCase()}`,
       message: `Your FIXIT provider account verification status has been updated to "${status}".`,
       type: 'verification',
@@ -225,7 +222,7 @@ export const updateProviderVerification = async (req, res, next) => {
     res.json({
       success: true,
       message: `Provider status set to ${status}`,
-      data: provider,
+      data: updatedProvider,
     });
   } catch (err) {
     next(err);

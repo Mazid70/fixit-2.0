@@ -119,10 +119,21 @@ export const createService = async (req, res, next) => {
 
     // Find provider profile for current user
     let provider = await dbStore.getProviderByUserId(req.user._id);
-    if (!provider) {
+
+    // Verification check: Non-admins must have a verified provider status
+    if (req.user.role !== 'admin') {
+      if (!provider || provider.verification_status !== 'verified') {
+        const currentStatus = provider ? provider.verification_status : 'unregistered';
+        return res.status(403).json({
+          success: false,
+          message: `Your provider account is currently '${currentStatus}'. You can only post and publish services after your provider credentials are approved and verified by an administrator.`,
+        });
+      }
+    } else if (!provider) {
       provider = await dbStore.saveServiceProvider(req.user._id, {
         business_name: `${req.user.name}'s Services`,
         location: location || 'Metro Area',
+        verification_status: 'verified',
       });
     }
 

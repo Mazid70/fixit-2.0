@@ -360,6 +360,15 @@ export const seedInitialData = () => {
       is_read: true,
       created_at: new Date(),
     },
+    {
+      _id: 'notif_3',
+      user_id: 'usr_prov_1',
+      title: 'Booking Accepted',
+      message: 'You have an active scheduled service booking #1002 from customer Karim Ahmed.',
+      type: 'booking',
+      is_read: false,
+      created_at: new Date(Date.now() - 3600000 * 12),
+    },
   ];
 
   reports = [];
@@ -633,6 +642,49 @@ export const dbStore = {
     }
 
     return sp;
+  },
+
+  async updateProviderVerification(idOrUserId, status) {
+    let sp = serviceProviders.find(
+      (p) => String(p._id) === String(idOrUserId) || String(p.user_id) === String(idOrUserId)
+    );
+    if (!sp) return null;
+
+    sp.verification_status = status;
+    sp.updated_at = new Date();
+
+    // If verified, ensure the user role is provider
+    if (status === 'verified') {
+      const u = users.find((usr) => String(usr._id) === String(sp.user_id));
+      if (u) {
+        u.role = 'provider';
+      }
+      if (getDBStatus()) {
+        try {
+          await User.findOneAndUpdate({ _id: sp.user_id }, { role: 'provider' });
+        } catch (e) {}
+      }
+    }
+
+    if (getDBStatus()) {
+      try {
+        if (mongoose.isValidObjectId(sp._id)) {
+          await ServiceProvider.findByIdAndUpdate(sp._id, {
+            verification_status: status,
+            updated_at: new Date(),
+          });
+        } else {
+          await ServiceProvider.findOneAndUpdate(
+            { _id: sp._id },
+            { verification_status: status, updated_at: new Date() }
+          );
+        }
+      } catch (err) {
+        console.warn('MongoDB provider verification update note:', err.message);
+      }
+    }
+
+    return this.getProviderById(sp._id);
   },
 
   async getAllProviders() {
@@ -930,6 +982,7 @@ export const dbStore = {
 
     const prov = serviceProviders.find((p) => String(p._id) === String(data.provider_id));
     if (prov) {
+      // Notify Provider
       await this.createNotification({
         user_id: prov.user_id,
         title: 'New Service Booking Request',
@@ -937,6 +990,14 @@ export const dbStore = {
         type: 'booking',
       });
     }
+
+    // Notify Customer
+    await this.createNotification({
+      user_id: data.customer_id,
+      title: 'Booking Request Placed',
+      message: `Your booking request #${newBk._id.slice(-5)} has been sent and is awaiting provider confirmation.`,
+      type: 'booking',
+    });
 
     return this.getBookingById(newBk._id);
   },
@@ -972,12 +1033,24 @@ export const dbStore = {
       } catch (err) {}
     }
 
+    // Notify Customer
     await this.createNotification({
       user_id: bk.customer_id,
       title: `Booking Status Update: ${newStatus.toUpperCase()}`,
       message: `Your booking #${bk._id.slice(-5)} status has been updated to "${newStatus}".`,
       type: 'booking',
     });
+
+    // Notify Provider
+    const prov = serviceProviders.find((p) => String(p._id) === String(bk.provider_id));
+    if (prov && prov.user_id) {
+      await this.createNotification({
+        user_id: prov.user_id,
+        title: `Booking Status: ${newStatus.toUpperCase()}`,
+        message: `Booking #${bk._id.slice(-5)} status has been updated to "${newStatus}".`,
+        type: 'booking',
+      });
+    }
 
     return this.getBookingById(id);
   },

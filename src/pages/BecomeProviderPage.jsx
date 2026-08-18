@@ -23,13 +23,16 @@ export default function BecomeProviderPage() {
   const { addToast } = useNotifications();
   const navigate = useNavigate();
 
+  const providerProfile = user?.providerProfile || (user?.role === 'provider' ? user?.profile : null);
+  const providerStatus = providerProfile?.verification_status || (user?.role === 'provider' ? 'pending' : null);
+
   const [formData, setFormData] = useState({
-    business_name: '',
+    business_name: providerProfile?.business_name || '',
     category: 'HVAC & AC Master Technician',
-    location: 'Gulshan & Banani, Dhaka',
+    location: providerProfile?.location || 'Gulshan & Banani, Dhaka',
     experience_years: '5+',
     nid_number: '',
-    description: '',
+    description: providerProfile?.description || '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -74,11 +77,10 @@ export default function BecomeProviderPage() {
       const status = err.response?.status;
       if (status === 401) {
         addToast('Session expired or invalid token. Please sign in again.', 'error');
-        // clear client-side auth and redirect to login
         if (logout) logout();
         navigate('/login');
       } else {
-        setError(err.message || 'Failed to submit application. Please try again.');
+        setError(err.response?.data?.message || err.message || 'Failed to submit application. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -143,8 +145,75 @@ export default function BecomeProviderPage() {
             </div>
             <h2 className="text-2xl font-bold text-white font-['Space_Grotesk']">Application Submitted to Admin!</h2>
             <p className="text-xs sm:text-sm text-neutral-300 max-w-md mx-auto leading-relaxed">
-              Your service partner verification request has been queued. An admin will review your credentials shortly. You can now access your provider dashboard and start setting up your listings.
+              Your service partner verification request has been received. Our administration team is reviewing your profile credentials. You will receive an in-app notification once approved.
             </p>
+            <div className="pt-4 flex justify-center gap-3">
+              <button
+                onClick={() => navigate('/dashboard/provider')}
+                className="px-6 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold shadow-lg shadow-orange-500/20 transition flex items-center gap-2"
+              >
+                <span>Go to Provider Dashboard</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ) : providerStatus === 'verified' ? (
+          <div className="text-center py-8 space-y-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg">
+              <ShieldCheck className="w-8 h-8" />
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
+              <span>Verified Partner Status Active</span>
+            </div>
+            <h2 className="text-2xl font-bold text-white font-['Space_Grotesk']">You are an Approved Service Provider!</h2>
+            <p className="text-xs sm:text-sm text-neutral-300 max-w-md mx-auto leading-relaxed">
+              Your trade registration ({providerProfile?.business_name || user?.name}) is verified and live on the FIXIT marketplace. You can create, edit, and manage services anytime.
+            </p>
+            <div className="pt-4 flex flex-wrap justify-center gap-3">
+              <button
+                onClick={() => navigate('/dashboard/provider/services')}
+                className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold shadow-lg shadow-orange-500/20 transition flex items-center gap-2"
+              >
+                <span>Manage My Services</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => navigate('/dashboard/provider')}
+                className="px-5 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold transition"
+              >
+                <span>Provider Overview</span>
+              </button>
+            </div>
+          </div>
+        ) : providerStatus === 'pending' ? (
+          <div className="text-center py-8 space-y-4">
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-lg">
+              <Clock className="w-8 h-8" />
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-bold">
+              <span>Application Under Admin Review</span>
+            </div>
+            <h2 className="text-2xl font-bold text-white font-['Space_Grotesk']">Already Applied - Pending Verification</h2>
+            <p className="text-xs sm:text-sm text-neutral-300 max-w-md mx-auto leading-relaxed">
+              Your partner registration for <strong className="text-white">{providerProfile?.business_name || user?.name}</strong> in <strong className="text-white">{providerProfile?.location || 'Dhaka'}</strong> has already been submitted to our verification team.
+            </p>
+            <div className="p-4 bg-[#151924] border border-[#232838] rounded-2xl text-left max-w-md mx-auto text-xs space-y-1.5 text-neutral-400">
+              <div className="flex justify-between text-neutral-300">
+                <span>Application Status:</span>
+                <span className="text-amber-400 font-bold capitalize">Pending Approval</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Account Name:</span>
+                <span className="text-neutral-200">{user?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Business / Trade:</span>
+                <span className="text-neutral-200">{providerProfile?.business_name || 'N/A'}</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 pt-2 border-t border-neutral-800">
+                ⚡ No need to submit again. You will be notified immediately when an admin approves your profile.
+              </p>
+            </div>
             <div className="pt-4 flex justify-center gap-3">
               <button
                 onClick={() => navigate('/dashboard/provider')}

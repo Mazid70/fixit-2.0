@@ -11,8 +11,11 @@ import {
   AlertCircle,
   X,
   Star,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
 import api from '../api/axios.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useNotifications } from '../context/NotificationContext.jsx';
 import LoadingSpinner from '../components/common/LoadingSpinner.jsx';
 import EmptyState from '../components/common/EmptyState.jsx';
@@ -21,7 +24,15 @@ import ConfirmationModal from '../components/common/ConfirmationModal.jsx';
 import Pagination from '../components/common/Pagination.jsx';
 
 export default function ProviderServicesPage() {
+  const { user } = useAuth();
   const { addToast } = useNotifications();
+
+  const providerProfile = user?.providerProfile || user?.profile;
+  const isVerified =
+    user?.role === 'admin' ||
+    providerProfile?.verification_status === 'verified' ||
+    user?.verification_status === 'verified';
+  const verificationStatus = providerProfile?.verification_status || 'pending';
 
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -127,6 +138,13 @@ export default function ProviderServicesPage() {
   }, [isModalOpen, categories]);
 
   const handleOpenAddModal = () => {
+    if (!isVerified) {
+      addToast(
+        `Your provider profile status is "${verificationStatus}". You can post services once an administrator approves your verification request.`,
+        'error'
+      );
+      return;
+    }
     setEditingService(null);
     setFormData({
       title: '',
@@ -134,7 +152,7 @@ export default function ProviderServicesPage() {
       category_id: categories[0]?._id || '',
       price: '',
       duration: '1-2 Hours',
-      location: '',
+      location: providerProfile?.location || '',
     });
     setIsModalOpen(true);
   };
@@ -223,12 +241,38 @@ export default function ProviderServicesPage() {
 
         <button
           onClick={handleOpenAddModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold text-xs shadow-lg shadow-orange-500/20"
+          disabled={!isVerified}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg transition ${
+            isVerified
+              ? 'bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white shadow-orange-500/20'
+              : 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700'
+          }`}
+          title={!isVerified ? 'Verification required to post services' : ''}
         >
           <Plus className="w-4 h-4" />
           <span>Add New Service</span>
         </button>
       </div>
+
+      {/* Verification Status Warning if not verified */}
+      {!isVerified && (
+        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-amber-300">
+                Partner Account Verification Pending
+              </p>
+              <p className="text-neutral-400 text-[11px] mt-0.5">
+                Your service provider credentials are under review by FIXIT admins (Current status: <strong className="text-amber-400 uppercase">{verificationStatus}</strong>). Service publishing will be enabled once your application is approved.
+              </p>
+            </div>
+          </div>
+          <div className="px-3 py-1 bg-amber-500/20 text-amber-300 rounded-lg text-[11px] font-bold whitespace-nowrap">
+            Under Review
+          </div>
+        </div>
+      )}
 
       {/* Services List */}
       {loading ? (

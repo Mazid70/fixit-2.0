@@ -115,11 +115,29 @@ export const applyToBecomeProvider = async (req, res, next) => {
     let existingProvider = await dbStore.getProviderByUserId(req.user._id);
 
     if (existingProvider) {
+      if (existingProvider.verification_status === 'verified') {
+        return res.status(400).json({
+          success: false,
+          message: 'You are already an approved and verified FIXIT provider partner.',
+          data: { provider: existingProvider },
+        });
+      }
+
+      if (existingProvider.verification_status === 'pending') {
+        return res.status(400).json({
+          success: false,
+          message: 'Your provider application is already submitted and currently under review by FIXIT admins. No need to re-apply.',
+          data: { provider: existingProvider },
+        });
+      }
+
+      // If rejected, update & resubmit
       existingProvider.business_name = business_name.trim();
       existingProvider.description = description || existingProvider.description;
       existingProvider.location = location.trim();
       existingProvider.verification_status = 'pending';
       existingProvider.updated_at = new Date();
+      await dbStore.saveServiceProvider(req.user._id, existingProvider);
     } else {
       existingProvider = await dbStore.saveServiceProvider(req.user._id, {
         business_name: business_name.trim(),
@@ -137,20 +155,20 @@ export const applyToBecomeProvider = async (req, res, next) => {
 
     // Notify Admins
     const admins = dbStore.users.filter((u) => u.role === 'admin');
-    admins.forEach(async (admin) => {
+    for (const admin of admins) {
       await dbStore.createNotification({
         user_id: admin._id,
         title: 'New Service Provider Application',
         message: `${updatedUser.name} submitted an application to become a provider (${business_name.trim()} in ${location.trim()}).`,
         type: 'verification',
       });
-    });
+    }
 
     // Notify User
     await dbStore.createNotification({
       user_id: req.user._id,
       title: 'Provider Application Received',
-      message: 'Your service partner application has been submitted to FIXIT verification admins. You can now configure your services while awaiting verification.',
+      message: 'Your service partner application has been submitted to FIXIT verification admins. You will be notified once reviewed.',
       type: 'system',
     });
 

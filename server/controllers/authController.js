@@ -150,10 +150,11 @@ export const login = async (req, res, next) => {
     }
 
     let profileData = null;
+    let providerProfile = await dbStore.getProviderByUserId(user._id);
     if (user.role === 'customer') {
       profileData = await dbStore.getCustomerProfileByUserId(user._id);
     } else if (user.role === 'provider') {
-      profileData = await dbStore.getProviderByUserId(user._id);
+      profileData = providerProfile;
     }
 
     const token = generateToken(user._id);
@@ -178,6 +179,7 @@ export const login = async (req, res, next) => {
       status: user.status,
       created_at: user.created_at,
       profile: profileData,
+      providerProfile: providerProfile || null,
     };
 
     res.json({
@@ -222,10 +224,11 @@ export const getMe = async (req, res, next) => {
     }
 
     let profileData = null;
+    let providerProfile = await dbStore.getProviderByUserId(user._id);
     if (user.role === 'customer') {
       profileData = await dbStore.getCustomerProfileByUserId(user._id);
     } else if (user.role === 'provider') {
-      profileData = await dbStore.getProviderByUserId(user._id);
+      profileData = providerProfile;
     }
 
     const safeAvatar = user.avatar || profileData?.profile_image || profileData?.avatar || '';
@@ -240,6 +243,7 @@ export const getMe = async (req, res, next) => {
       status: user.status,
       created_at: user.created_at,
       profile: profileData,
+      providerProfile: providerProfile || null,
     };
 
     res.json({
