@@ -120,32 +120,29 @@ export const getAllUsers = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page || '1', 10) || 1;
     const limit = parseInt(req.query.limit || '10', 10) || 10;
-
-    const allUsers = await Promise.all(
-      dbStore.users.map(async (u) => {
-        let extra = null;
-        if (u.role === 'customer') {
-          extra = await dbStore.getCustomerProfileByUserId(u._id);
-        } else if (u.role === 'provider') {
-          extra = await dbStore.getProviderByUserId(u._id);
-        }
-        return {
-          _id: u._id,
-          name: u.name,
-          email: u.email,
-          phone: u.phone,
-          role: u.role,
-          status: u.status,
-          created_at: u.created_at,
-          profile: extra,
-        };
-      })
-    );
-
-    const total = allUsers.length;
+    const total = dbStore.users.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const start = (page - 1) * limit;
-    const data = allUsers.slice(start, start + limit);
+    const slicedUsers = dbStore.users.slice(start, start + limit);
+
+    const data = slicedUsers.map((u) => {
+      let extra = null;
+      if (u.role === 'customer') {
+        extra = dbStore.customerProfiles.find((cp) => String(cp.user_id) === String(u._id)) || null;
+      } else if (u.role === 'provider') {
+        extra = dbStore.serviceProviders.find((sp) => String(sp.user_id) === String(u._id)) || null;
+      }
+      return {
+        _id: u._id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        role: u.role,
+        status: u.status,
+        created_at: u.created_at,
+        profile: extra,
+      };
+    });
 
     res.json({ success: true, count: data.length, page, totalPages, total, data });
   } catch (err) {

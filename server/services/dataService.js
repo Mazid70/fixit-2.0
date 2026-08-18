@@ -433,18 +433,28 @@ export const dbStore = {
   // User methods
   async findUserByEmail(email) {
     const emailNorm = (email || '').toLowerCase().trim();
-    if (getDBStatus()) {
+    let u = users.find((usr) => usr.email && usr.email.toLowerCase() === emailNorm);
+    if (u) return u;
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
       try {
         const doc = await User.findOne({ email: emailNorm }).lean();
-        if (doc) return { ...doc, _id: String(doc._id) };
+        if (doc) {
+          u = { ...doc, _id: String(doc._id) };
+          users.push(u);
+          return u;
+        }
       } catch (err) {}
     }
-    return users.find((u) => u.email && u.email.toLowerCase() === emailNorm) || null;
+    return null;
   },
 
   async findUserById(id) {
     if (!id) return null;
-    if (getDBStatus()) {
+    let u = users.find((usr) => String(usr._id) === String(id));
+    if (u) return u;
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
       try {
         let doc = null;
         if (mongoose.isValidObjectId(id)) {
@@ -452,10 +462,14 @@ export const dbStore = {
         } else {
           doc = await User.findOne({ _id: id }).lean();
         }
-        if (doc) return { ...doc, _id: String(doc._id) };
+        if (doc) {
+          u = { ...doc, _id: String(doc._id) };
+          users.push(u);
+          return u;
+        }
       } catch (err) {}
     }
-    return users.find((u) => String(u._id) === String(id)) || null;
+    return null;
   },
 
   async createUser(userData) {
@@ -467,74 +481,76 @@ export const dbStore = {
       created_at: new Date(),
     };
 
-    if (getDBStatus()) {
-      try {
-        const saved = await User.create({
-          _id: newUser._id,
-          name: newUser.name,
-          email: newUser.email,
-          phone: newUser.phone,
-          password: newUser.password,
-          role: newUser.role,
-          status: newUser.status,
-          avatar: newUser.avatar || '',
-        });
-        newUser._id = String(saved._id);
-      } catch (err) {
-        console.warn('MongoDB User creation fallback:', err.message);
-      }
+    users.push(newUser);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      User.create({
+        _id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        password: newUser.password,
+        role: newUser.role,
+        status: newUser.status,
+        avatar: newUser.avatar || '',
+      }).catch((err) => {
+        console.warn('Background MongoDB User creation note:', err.message);
+      });
     }
 
-    users.push(newUser);
     return newUser;
   },
 
   async updateUser(id, updates) {
-    if (getDBStatus()) {
-      try {
-        if (mongoose.isValidObjectId(id)) {
-          await User.findByIdAndUpdate(id, updates);
-        } else {
-          await User.findOneAndUpdate({ _id: id }, updates);
-        }
-      } catch (err) {
-        console.warn('MongoDB updateUser note:', err.message);
-      }
-    }
-
     const idx = users.findIndex((u) => String(u._id) === String(id));
     if (idx !== -1) {
       users[idx] = { ...users[idx], ...updates, updated_at: new Date() };
-      return users[idx];
     }
-    return null;
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      if (mongoose.isValidObjectId(id)) {
+        User.findByIdAndUpdate(id, updates).catch(() => {});
+      } else {
+        User.findOneAndUpdate({ _id: id }, updates).catch(() => {});
+      }
+    }
+
+    return idx !== -1 ? users[idx] : null;
   },
 
   async deleteUser(id) {
-    if (getDBStatus()) {
-      try {
-        if (mongoose.isValidObjectId(id)) {
-          await User.findByIdAndDelete(id);
-        } else {
-          await User.findOneAndDelete({ _id: id });
-        }
-      } catch (err) {}
-    }
     const idx = users.findIndex((u) => String(u._id) === String(id));
-    if (idx === -1) return false;
-    users.splice(idx, 1);
-    return true;
+    if (idx !== -1) {
+      users.splice(idx, 1);
+    }
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      if (mongoose.isValidObjectId(id)) {
+        User.findByIdAndDelete(id).catch(() => {});
+      } else {
+        User.findOneAndDelete({ _id: id }).catch(() => {});
+      }
+    }
+
+    return idx !== -1;
   },
 
   // Customer Profile
   async getCustomerProfileByUserId(userId) {
-    if (getDBStatus()) {
+    let cp = customerProfiles.find((p) => String(p.user_id) === String(userId));
+    if (cp) return cp;
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
       try {
-        const cp = await CustomerProfile.findOne({ user_id: userId }).lean();
-        if (cp) return { ...cp, _id: String(cp._id) };
+        const dbCp = await CustomerProfile.findOne({ user_id: userId }).lean();
+        if (dbCp) {
+          cp = { ...dbCp, _id: String(dbCp._id) };
+          customerProfiles.push(cp);
+          return cp;
+        }
       } catch (err) {}
     }
-    return customerProfiles.find((cp) => String(cp.user_id) === String(userId)) || null;
+    return null;
   },
 
   async saveCustomerProfile(userId, data) {
@@ -552,16 +568,14 @@ export const dbStore = {
       customerProfiles.push(cp);
     }
 
-    if (getDBStatus()) {
-      try {
-        await CustomerProfile.findOneAndUpdate(
-          { user_id: userId },
-          { ...data, updated_at: new Date() },
-          { upsert: true, new: true }
-        );
-      } catch (err) {
-        console.warn('MongoDB CustomerProfile save note:', err.message);
-      }
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      CustomerProfile.findOneAndUpdate(
+        { user_id: userId },
+        { ...data, updated_at: new Date() },
+        { upsert: true, new: true }
+      ).catch((err) => {
+        console.warn('Background CustomerProfile save note:', err.message);
+      });
     }
 
     return cp;
@@ -721,10 +735,16 @@ export const dbStore = {
 
   // Categories
   async getCategories() {
-    if (getDBStatus()) {
+    if (serviceCategories.length > 0) {
+      return [...serviceCategories];
+    }
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
       try {
         const list = await ServiceCategory.find().lean();
-        if (list.length) return list.map((c) => ({ ...c, _id: String(c._id) }));
+        if (list.length) {
+          serviceCategories = list.map((c) => ({ ...c, _id: String(c._id) }));
+          return [...serviceCategories];
+        }
       } catch (err) {}
     }
     return [...serviceCategories];
@@ -737,23 +757,78 @@ export const dbStore = {
       description: data.description || '',
       created_at: new Date(),
     };
-    if (getDBStatus()) {
-      try {
-        await ServiceCategory.create(newCat);
-      } catch (err) {}
-    }
+
     serviceCategories.push(newCat);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      ServiceCategory.create(newCat).catch(() => {});
+    }
+
     return newCat;
   },
 
   // Services
   async getServices({ search, category, providerId, minPrice, maxPrice, location, status } = {}) {
-    let list = services.map((s) => {
-      const sp = serviceProviders.find((p) => String(p._id) === String(s.provider_id));
-      const spUser = sp ? users.find((u) => String(u._id) === String(sp.user_id)) : null;
-      const cat = serviceCategories.find((c) => String(c._id) === String(s.category_id));
+    // Build quick lookup map for providers, users and categories
+    const userMap = new Map();
+    for (let i = 0; i < users.length; i++) {
+      userMap.set(String(users[i]._id), users[i]);
+    }
 
-      return {
+    const providerMap = new Map();
+    for (let i = 0; i < serviceProviders.length; i++) {
+      providerMap.set(String(serviceProviders[i]._id), serviceProviders[i]);
+    }
+
+    const categoryMap = new Map();
+    for (let i = 0; i < serviceCategories.length; i++) {
+      categoryMap.set(String(serviceCategories[i]._id), serviceCategories[i]);
+    }
+
+    const targetStatus = status || 'active';
+    const q = search ? search.toLowerCase().trim() : null;
+    const catQuery = category ? category.toLowerCase().trim() : null;
+    const locQuery = location ? location.toLowerCase().trim() : null;
+    const minP = minPrice !== undefined && minPrice !== '' ? parseFloat(minPrice) : null;
+    const maxP = maxPrice !== undefined && maxPrice !== '' ? parseFloat(maxPrice) : null;
+
+    const results = [];
+
+    for (let i = 0; i < services.length; i++) {
+      const s = services[i];
+
+      // Quick filter checks before object construction
+      if (s.status !== targetStatus) continue;
+      if (providerId && String(s.provider_id) !== String(providerId)) continue;
+      if (minP !== null && s.price < minP) continue;
+      if (maxP !== null && s.price > maxP) continue;
+
+      const sp = providerMap.get(String(s.provider_id));
+      const spUser = sp ? userMap.get(String(sp.user_id)) : null;
+      const cat = categoryMap.get(String(s.category_id));
+
+      if (catQuery) {
+        const matchId = String(s.category_id) === String(category);
+        const matchName = cat && cat.category_name.toLowerCase() === catQuery;
+        if (!matchId && !matchName) continue;
+      }
+
+      if (locQuery) {
+        const sLocMatch = s.location && s.location.toLowerCase().includes(locQuery);
+        const pLocMatch = sp && sp.location && sp.location.toLowerCase().includes(locQuery);
+        if (!sLocMatch && !pLocMatch) continue;
+      }
+
+      if (q) {
+        const tMatch = s.title && s.title.toLowerCase().includes(q);
+        const dMatch = s.description && s.description.toLowerCase().includes(q);
+        const cMatch = cat && cat.category_name.toLowerCase().includes(q);
+        const bMatch = sp && sp.business_name.toLowerCase().includes(q);
+        const lMatch = s.location && s.location.toLowerCase().includes(q);
+        if (!tMatch && !dMatch && !cMatch && !bMatch && !lMatch) continue;
+      }
+
+      results.push({
         ...s,
         provider: sp
           ? {
@@ -768,53 +843,10 @@ export const dbStore = {
             }
           : null,
         category: cat ? { _id: cat._id, category_name: cat.category_name } : null,
-      };
-    });
-
-    if (status) {
-      list = list.filter((s) => s.status === status);
-    } else {
-      list = list.filter((s) => s.status === 'active');
+      });
     }
 
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (s) =>
-          s.title.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q) ||
-          (s.category && s.category.category_name.toLowerCase().includes(q)) ||
-          (s.provider && s.provider.business_name.toLowerCase().includes(q)) ||
-          (s.location && s.location.toLowerCase().includes(q))
-      );
-    }
-
-    if (category) {
-      list = list.filter(
-        (s) =>
-          String(s.category_id) === String(category) ||
-          (s.category && s.category.category_name.toLowerCase() === category.toLowerCase())
-      );
-    }
-
-    if (providerId) {
-      list = list.filter((s) => String(s.provider_id) === String(providerId));
-    }
-
-    if (location) {
-      const loc = location.toLowerCase();
-      list = list.filter((s) => (s.location && s.location.toLowerCase().includes(loc)) || (s.provider && s.provider.location && s.provider.location.toLowerCase().includes(loc)));
-    }
-
-    if (minPrice !== undefined && minPrice !== '') {
-      list = list.filter((s) => s.price >= parseFloat(minPrice));
-    }
-
-    if (maxPrice !== undefined && maxPrice !== '') {
-      list = list.filter((s) => s.price <= parseFloat(maxPrice));
-    }
-
-    return list;
+    return results;
   },
 
   async getServiceById(id) {
@@ -856,64 +888,113 @@ export const dbStore = {
       created_at: new Date(),
     };
 
-    if (getDBStatus()) {
-      try {
-        await Service.create(newService);
-      } catch (err) {}
+    services.push(newService);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      Service.create(newService).catch(() => {});
     }
 
-    services.push(newService);
     return this.getServiceById(newService._id);
   },
 
   async updateService(id, updates) {
-    if (getDBStatus()) {
-      try {
-        if (mongoose.isValidObjectId(id)) {
-          await Service.findByIdAndUpdate(id, updates);
-        } else {
-          await Service.findOneAndUpdate({ _id: id }, updates);
-        }
-      } catch (err) {}
-    }
-
     const idx = services.findIndex((s) => String(s._id) === String(id));
     if (idx === -1) return null;
     services[idx] = { ...services[idx], ...updates, updated_at: new Date() };
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      if (mongoose.isValidObjectId(id)) {
+        Service.findByIdAndUpdate(id, updates).catch(() => {});
+      } else {
+        Service.findOneAndUpdate({ _id: id }, updates).catch(() => {});
+      }
+    }
+
     return this.getServiceById(id);
   },
 
   async deleteService(id) {
-    if (getDBStatus()) {
-      try {
-        if (mongoose.isValidObjectId(id)) {
-          await Service.findByIdAndDelete(id);
-        } else {
-          await Service.findOneAndDelete({ _id: id });
-        }
-      } catch (err) {}
-    }
-
     const idx = services.findIndex((s) => String(s._id) === String(id));
     if (idx === -1) return false;
     services.splice(idx, 1);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      if (mongoose.isValidObjectId(id)) {
+        Service.findByIdAndDelete(id).catch(() => {});
+      } else {
+        Service.findOneAndDelete({ _id: id }).catch(() => {});
+      }
+    }
+
     return true;
   },
 
   // Bookings
   async getBookings({ customerId, providerId, status } = {}) {
-    let list = bookings.map((b) => {
-      const cust = users.find((u) => String(u._id) === String(b.customer_id));
-      const prov = serviceProviders.find((p) => String(p._id) === String(b.provider_id));
-      const provUser = prov ? users.find((u) => String(u._id) === String(prov.user_id)) : null;
-      const srv = services.find((s) => String(s._id) === String(b.service_id));
-      const cat = srv ? serviceCategories.find((c) => String(c._id) === String(srv.category_id)) : null;
-      const rev = reviews.find((r) => String(r.booking_id) === String(b._id));
-      const history = bookingStatusHistory
-        .filter((h) => String(h.booking_id) === String(b._id))
-        .sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
+    const userMap = new Map();
+    for (let i = 0; i < users.length; i++) {
+      userMap.set(String(users[i]._id), users[i]);
+    }
 
-      return {
+    const providerMap = new Map();
+    for (let i = 0; i < serviceProviders.length; i++) {
+      providerMap.set(String(serviceProviders[i]._id), serviceProviders[i]);
+    }
+
+    const serviceMap = new Map();
+    for (let i = 0; i < services.length; i++) {
+      serviceMap.set(String(services[i]._id), services[i]);
+    }
+
+    const categoryMap = new Map();
+    for (let i = 0; i < serviceCategories.length; i++) {
+      categoryMap.set(String(serviceCategories[i]._id), serviceCategories[i]);
+    }
+
+    const reviewMap = new Map();
+    for (let i = 0; i < reviews.length; i++) {
+      reviewMap.set(String(reviews[i].booking_id), reviews[i]);
+    }
+
+    const historyByBooking = new Map();
+    for (let i = 0; i < bookingStatusHistory.length; i++) {
+      const h = bookingStatusHistory[i];
+      const bId = String(h.booking_id);
+      if (!historyByBooking.has(bId)) {
+        historyByBooking.set(bId, []);
+      }
+      historyByBooking.get(bId).push(h);
+    }
+
+    const cId = customerId ? String(customerId) : null;
+    const pId = providerId ? String(providerId) : null;
+    const isAcceptedFilter = status === 'accepted';
+
+    const results = [];
+
+    for (let i = 0; i < bookings.length; i++) {
+      const b = bookings[i];
+
+      if (cId && String(b.customer_id) !== cId) continue;
+      if (pId && String(b.provider_id) !== pId) continue;
+
+      if (status && status !== 'all') {
+        if (isAcceptedFilter) {
+          if (b.status !== 'accepted' && b.status !== 'confirmed') continue;
+        } else if (b.status !== status) {
+          continue;
+        }
+      }
+
+      const cust = userMap.get(String(b.customer_id));
+      const prov = providerMap.get(String(b.provider_id));
+      const provUser = prov ? userMap.get(String(prov.user_id)) : null;
+      const srv = serviceMap.get(String(b.service_id));
+      const cat = srv ? categoryMap.get(String(srv.category_id)) : null;
+      const rev = reviewMap.get(String(b._id));
+      const history = historyByBooking.get(String(b._id)) || [];
+
+      results.push({
         ...b,
         customer: cust
           ? {
@@ -945,22 +1026,10 @@ export const dbStore = {
           : null,
         review: rev || null,
         history,
-      };
-    });
-
-    if (customerId) {
-      list = list.filter((b) => String(b.customer_id) === String(customerId));
+      });
     }
 
-    if (providerId) {
-      list = list.filter((b) => String(b.provider_id) === String(providerId));
-    }
-
-    if (status && status !== 'all') {
-      list = list.filter((b) => b.status === status || (status === 'accepted' && b.status === 'confirmed'));
-    }
-
-    return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return results.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   },
 
   async getBookingById(id) {
@@ -980,13 +1049,11 @@ export const dbStore = {
       created_at: new Date(),
     };
 
-    if (getDBStatus()) {
-      try {
-        await Booking.create(newBk);
-      } catch (err) {}
-    }
-
     bookings.push(newBk);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      Booking.create(newBk).catch(() => {});
+    }
 
     const historyItem = {
       _id: 'bsh_' + Date.now(),
@@ -996,16 +1063,15 @@ export const dbStore = {
       changed_at: new Date(),
     };
     bookingStatusHistory.push(historyItem);
-    if (getDBStatus()) {
-      try {
-        await BookingStatusHistory.create(historyItem);
-      } catch (err) {}
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      BookingStatusHistory.create(historyItem).catch(() => {});
     }
 
     const prov = serviceProviders.find((p) => String(p._id) === String(data.provider_id));
     if (prov) {
       // Notify Provider
-      await this.createNotification({
+      this.createNotification({
         user_id: prov.user_id,
         title: 'New Service Booking Request',
         message: `You have received a new booking request for service #${newBk._id.slice(-5)}.`,
@@ -1014,7 +1080,7 @@ export const dbStore = {
     }
 
     // Notify Customer
-    await this.createNotification({
+    this.createNotification({
       user_id: data.customer_id,
       title: 'Booking Request Placed',
       message: `Your booking request #${newBk._id.slice(-5)} has been sent and is awaiting provider confirmation.`,
@@ -1031,14 +1097,12 @@ export const dbStore = {
     bk.status = newStatus;
     bk.updated_at = new Date();
 
-    if (getDBStatus()) {
-      try {
-        if (mongoose.isValidObjectId(id)) {
-          await Booking.findByIdAndUpdate(id, { status: newStatus });
-        } else {
-          await Booking.findOneAndUpdate({ _id: id }, { status: newStatus });
-        }
-      } catch (err) {}
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      if (mongoose.isValidObjectId(id)) {
+        Booking.findByIdAndUpdate(id, { status: newStatus }).catch(() => {});
+      } else {
+        Booking.findOneAndUpdate({ _id: id }, { status: newStatus }).catch(() => {});
+      }
     }
 
     const historyItem = {
@@ -1049,14 +1113,13 @@ export const dbStore = {
       changed_at: new Date(),
     };
     bookingStatusHistory.push(historyItem);
-    if (getDBStatus()) {
-      try {
-        await BookingStatusHistory.create(historyItem);
-      } catch (err) {}
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      BookingStatusHistory.create(historyItem).catch(() => {});
     }
 
     // Notify Customer
-    await this.createNotification({
+    this.createNotification({
       user_id: bk.customer_id,
       title: `Booking Status Update: ${newStatus.toUpperCase()}`,
       message: `Your booking #${bk._id.slice(-5)} status has been updated to "${newStatus}".`,
@@ -1066,7 +1129,7 @@ export const dbStore = {
     // Notify Provider
     const prov = serviceProviders.find((p) => String(p._id) === String(bk.provider_id));
     if (prov && prov.user_id) {
-      await this.createNotification({
+      this.createNotification({
         user_id: prov.user_id,
         title: `Booking Status: ${newStatus.toUpperCase()}`,
         message: `Booking #${bk._id.slice(-5)} status has been updated to "${newStatus}".`,
@@ -1089,30 +1152,26 @@ export const dbStore = {
       created_at: new Date(),
     };
 
-    if (getDBStatus()) {
-      try {
-        await Review.create(newRev);
-      } catch (err) {}
-    }
-
     reviews.push(newRev);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      Review.create(newRev).catch(() => {});
+    }
 
     const providerRevs = reviews.filter((r) => String(r.provider_id) === String(data.provider_id));
     const avg = providerRevs.reduce((acc, curr) => acc + curr.rating, 0) / (providerRevs.length || 1);
     const prov = serviceProviders.find((p) => String(p._id) === String(data.provider_id));
     if (prov) {
       prov.average_rating = parseFloat(avg.toFixed(2));
-      if (getDBStatus()) {
-        try {
-          if (mongoose.isValidObjectId(prov._id)) {
-            await ServiceProvider.findByIdAndUpdate(prov._id, { average_rating: prov.average_rating });
-          } else {
-            await ServiceProvider.findOneAndUpdate({ _id: prov._id }, { average_rating: prov.average_rating });
-          }
-        } catch (err) {}
+      if (getDBStatus() && mongoose.connection.readyState === 1) {
+        if (mongoose.isValidObjectId(prov._id)) {
+          ServiceProvider.findByIdAndUpdate(prov._id, { average_rating: prov.average_rating }).catch(() => {});
+        } else {
+          ServiceProvider.findOneAndUpdate({ _id: prov._id }, { average_rating: prov.average_rating }).catch(() => {});
+        }
       }
 
-      await this.createNotification({
+      this.createNotification({
         user_id: prov.user_id,
         title: 'New Review Received',
         message: `A customer rated you ${data.rating} stars for booking #${String(data.booking_id).slice(-5)}.`,
@@ -1153,13 +1212,12 @@ export const dbStore = {
       created_at: new Date(),
     };
 
-    if (getDBStatus()) {
-      try {
-        await Notification.create(notif);
-      } catch (err) {}
+    notifications.push(notif);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      Notification.create(notif).catch(() => {});
     }
 
-    notifications.push(notif);
     return notif;
   },
 
@@ -1167,14 +1225,12 @@ export const dbStore = {
     const n = notifications.find((notif) => String(notif._id) === String(id) && String(notif.user_id) === String(userId));
     if (n) {
       n.is_read = true;
-      if (getDBStatus()) {
-        try {
-          if (mongoose.isValidObjectId(id)) {
-            await Notification.findByIdAndUpdate(id, { is_read: true });
-          } else {
-            await Notification.findOneAndUpdate({ _id: id }, { is_read: true });
-          }
-        } catch (err) {}
+      if (getDBStatus() && mongoose.connection.readyState === 1) {
+        if (mongoose.isValidObjectId(id)) {
+          Notification.findByIdAndUpdate(id, { is_read: true }).catch(() => {});
+        } else {
+          Notification.findOneAndUpdate({ _id: id }, { is_read: true }).catch(() => {});
+        }
       }
     }
     return n;
@@ -1186,10 +1242,8 @@ export const dbStore = {
         n.is_read = true;
       }
     });
-    if (getDBStatus()) {
-      try {
-        await Notification.updateMany({ user_id: userId }, { is_read: true });
-      } catch (err) {}
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      Notification.updateMany({ user_id: userId }, { is_read: true }).catch(() => {});
     }
     return true;
   },
@@ -1205,13 +1259,12 @@ export const dbStore = {
       created_at: new Date(),
     };
 
-    if (getDBStatus()) {
-      try {
-        await Report.create(rep);
-      } catch (err) {}
+    reports.push(rep);
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      Report.create(rep).catch(() => {});
     }
 
-    reports.push(rep);
     return rep;
   },
 
@@ -1233,14 +1286,12 @@ export const dbStore = {
     rep.status = status;
     rep.updated_at = new Date();
 
-    if (getDBStatus()) {
-      try {
-        if (mongoose.isValidObjectId(id)) {
-          await Report.findByIdAndUpdate(id, { status, updated_at: new Date() });
-        } else {
-          await Report.findOneAndUpdate({ _id: id }, { status, updated_at: new Date() });
-        }
-      } catch (err) {}
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      if (mongoose.isValidObjectId(id)) {
+        Report.findByIdAndUpdate(id, { status, updated_at: new Date() }).catch(() => {});
+      } else {
+        Report.findOneAndUpdate({ _id: id }, { status, updated_at: new Date() }).catch(() => {});
+      }
     }
 
     return rep;

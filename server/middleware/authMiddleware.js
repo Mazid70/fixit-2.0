@@ -16,18 +16,7 @@ export const protect = async (req, res, next) => {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, JWT_SECRET);
 
-      let user = null;
-      if (getDBStatus()) {
-        try {
-          user = await User.findById(decoded.id).select('-password');
-        } catch {
-          // If decoded.id is not a valid ObjectId or lookup fails, fallback to dbStore
-          user = null;
-        }
-      }
-      if (!user) {
-        user = await dbStore.findUserById(decoded.id);
-      }
+      const user = await dbStore.findUserById(decoded.id);
 
       if (!user) {
         return res.status(401).json({
@@ -68,15 +57,7 @@ export const protect = async (req, res, next) => {
       token = match[1];
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        let user = null;
-        if (getDBStatus()) {
-          try {
-            user = await User.findById(decoded.id).select('-password');
-          } catch {
-            user = null;
-          }
-        }
-        if (!user) user = await dbStore.findUserById(decoded.id);
+        const user = await dbStore.findUserById(decoded.id);
         if (!user) {
           return res.status(401).json({ success: false, message: 'User not found' });
         }

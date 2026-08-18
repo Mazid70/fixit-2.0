@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import dotenv from 'dotenv';
 
 import authRoutes from './routes/authRoutes.js';
@@ -16,6 +17,17 @@ import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 dotenv.config();
 
 const app = express();
+
+// Disable x-powered-by for security and slightly reduced byte payload
+app.disable('x-powered-by');
+
+// Enable Gzip/Deflate compression for all responses
+app.use(
+  compression({
+    level: 6,
+    threshold: 512, // Compress payloads larger than 512 bytes
+  })
+);
 
 // Security and utility middleware
 app.use(
@@ -35,6 +47,18 @@ app.use(
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Quick micro-caching headers for public GET routes
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.path.startsWith('/api/services/categories')) {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  } else if (req.method === 'GET' && req.path.startsWith('/api/services') && !req.path.includes('/my-services')) {
+    res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+  } else if (req.path.startsWith('/api')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  }
+  next();
+});
 
 // Health Check API
 app.get('/api/health', (req, res) => {
