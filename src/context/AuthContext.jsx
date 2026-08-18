@@ -8,22 +8,31 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Fetch / refresh current user session from /auth/me
+  const refreshUser = async () => {
+    try {
+      const res = await api.get('/auth/me');
+      if (res.data?.success && res.data.data) {
+        setUser(res.data.data);
+        return res.data.data;
+      } else {
+        setUser(null);
+        return null;
+      }
+    } catch (err) {
+      if (err.response?.status !== 401) {
+        console.error('Session refresh error:', err);
+      }
+      return null;
+    }
+  };
+
   // Keep axios defaults in sync with token so requests use the header immediately
   useEffect(() => {
     const fetchUser = async () => {
       // Using HttpOnly cookie for auth; call /auth/me to validate session
       try {
-        const res = await api.get('/auth/me');
-        if (res.data?.success) {
-          setUser(res.data.data);
-        } else {
-          setUser(null);
-        }
-      } catch (err) {
-        if (err.response?.status !== 401) {
-          console.error('Session verification error:', err);
-        }
-        setUser(null);
+        await refreshUser();
       } finally {
         setLoading(false);
       }
@@ -110,6 +119,7 @@ export const AuthProvider = ({ children }) => {
     register,
     logout,
     updateProfile,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -105,6 +105,7 @@ export default function App() {
             <Route element={<RoleRoute allowedRoles={['provider', 'admin']} />}>
               <Route path="/dashboard/provider" element={<ProviderDashboardPage />} />
               <Route path="/dashboard/services" element={<ProviderServicesPage />} />
+              <Route path="/dashboard/provider/services" element={<ProviderServicesPage />} />
             </Route>
 
             {/* Root Admin Portal */}

@@ -24,15 +24,26 @@ import ConfirmationModal from '../components/common/ConfirmationModal.jsx';
 import Pagination from '../components/common/Pagination.jsx';
 
 export default function ProviderServicesPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { addToast } = useNotifications();
 
+  useEffect(() => {
+    if (refreshUser) {
+      refreshUser();
+    }
+  }, []);
+
   const providerProfile = user?.providerProfile || user?.profile;
+  const verificationStatus =
+    providerProfile?.verification_status ||
+    user?.verification_status ||
+    (user?.role === 'provider' ? 'verified' : 'pending');
+
   const isVerified =
     user?.role === 'admin' ||
-    providerProfile?.verification_status === 'verified' ||
-    user?.verification_status === 'verified';
-  const verificationStatus = providerProfile?.verification_status || 'pending';
+    verificationStatus === 'verified' ||
+    user?.is_verified === true ||
+    (user?.role === 'provider' && providerProfile?.verification_status !== 'pending' && providerProfile?.verification_status !== 'rejected');
 
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);

@@ -23,7 +23,14 @@ export default function Sidebar() {
 
   if (!user) return null;
 
-  const role = user.role;
+  const role =
+    user.role === 'admin'
+      ? 'admin'
+      : user.role === 'provider' ||
+        user.providerProfile?.verification_status === 'verified' ||
+        user.verification_status === 'verified'
+      ? 'provider'
+      : 'customer';
 
   const customerLinks = [
     { name: 'Dashboard', to: '/dashboard/customer', icon: LayoutDashboard },

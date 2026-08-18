@@ -53,7 +53,16 @@ export const RoleRoute = ({ allowedRoles = [] }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (!user || !allowedRoles.includes(user.role)) {
+  const isAllowed =
+    user &&
+    (allowedRoles.includes(user.role) ||
+      (allowedRoles.includes('provider') &&
+        (user.role === 'provider' ||
+          user.providerProfile?.verification_status === 'verified' ||
+          user.verification_status === 'verified')) ||
+      user.role === 'admin');
+
+  if (!isAllowed) {
     return <Navigate to="/" replace />;
   }
 

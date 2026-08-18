@@ -111,7 +111,13 @@ export default function Navbar() {
   const getDashboardPath = () => {
     if (!user) return '/dashboard';
     if (user.role === 'admin') return '/admin';
-    if (user.role === 'provider') return '/dashboard/provider';
+    if (
+      user.role === 'provider' ||
+      user.providerProfile?.verification_status === 'verified' ||
+      user.verification_status === 'verified'
+    ) {
+      return '/dashboard/provider';
+    }
     return '/dashboard/customer';
   };
 

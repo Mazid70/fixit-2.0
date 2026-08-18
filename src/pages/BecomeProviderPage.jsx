@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ShieldCheck,
@@ -23,8 +23,17 @@ export default function BecomeProviderPage() {
   const { addToast } = useNotifications();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (refreshUser) {
+      refreshUser();
+    }
+  }, []);
+
   const providerProfile = user?.providerProfile || (user?.role === 'provider' ? user?.profile : null);
-  const providerStatus = providerProfile?.verification_status || (user?.role === 'provider' ? 'pending' : null);
+  const providerStatus =
+    providerProfile?.verification_status ||
+    user?.verification_status ||
+    (user?.role === 'provider' ? 'verified' : null);
 
   const [formData, setFormData] = useState({
     business_name: providerProfile?.business_name || '',

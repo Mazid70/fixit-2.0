@@ -87,6 +87,11 @@ export const register = async (req, res, next) => {
 
     const safeAvatar = newUser.avatar || profileData?.profile_image || profileData?.avatar || '';
 
+    const verificationStatus =
+      newUser.role === 'provider'
+        ? (profileData?.verification_status || 'pending')
+        : (newUser.role === 'admin' ? 'verified' : null);
+
     const safeUser = {
       _id: newUser._id,
       name: newUser.name,
@@ -97,6 +102,9 @@ export const register = async (req, res, next) => {
       status: newUser.status,
       created_at: newUser.created_at,
       profile: profileData,
+      providerProfile: newUser.role === 'provider' ? profileData : null,
+      verification_status: verificationStatus,
+      is_verified: newUser.role === 'admin' || verificationStatus === 'verified',
     };
 
     res.status(201).json({
@@ -167,6 +175,20 @@ export const login = async (req, res, next) => {
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
+    // If provider profile is verified, ensure role is provider
+    if (providerProfile && providerProfile.verification_status === 'verified' && user.role === 'customer') {
+      user.role = 'provider';
+      dbStore.updateUser(user._id, { role: 'provider' }).catch(() => {});
+    }
+
+    const verificationStatus =
+      providerProfile?.verification_status ||
+      (user.role === 'provider' ? 'verified' : user.role === 'admin' ? 'verified' : null);
+
+    const isVerified =
+      user.role === 'admin' ||
+      verificationStatus === 'verified';
+
     const safeAvatar = user.avatar || profileData?.profile_image || profileData?.avatar || '';
 
     const safeUser = {
@@ -180,6 +202,8 @@ export const login = async (req, res, next) => {
       created_at: user.created_at,
       profile: profileData,
       providerProfile: providerProfile || null,
+      verification_status: verificationStatus,
+      is_verified: isVerified,
     };
 
     res.json({
@@ -231,6 +255,20 @@ export const getMe = async (req, res, next) => {
       profileData = providerProfile;
     }
 
+    // If provider profile is verified, ensure role is provider
+    if (providerProfile && providerProfile.verification_status === 'verified' && user.role === 'customer') {
+      user.role = 'provider';
+      dbStore.updateUser(user._id, { role: 'provider' }).catch(() => {});
+    }
+
+    const verificationStatus =
+      providerProfile?.verification_status ||
+      (user.role === 'provider' ? 'verified' : user.role === 'admin' ? 'verified' : null);
+
+    const isVerified =
+      user.role === 'admin' ||
+      verificationStatus === 'verified';
+
     const safeAvatar = user.avatar || profileData?.profile_image || profileData?.avatar || '';
 
     const safeUser = {
@@ -244,6 +282,8 @@ export const getMe = async (req, res, next) => {
       created_at: user.created_at,
       profile: profileData,
       providerProfile: providerProfile || null,
+      verification_status: verificationStatus,
+      is_verified: isVerified,
     };
 
     res.json({
