@@ -190,3 +190,37 @@ export const applyToBecomeProvider = async (req, res, next) => {
   }
 };
 
+// @desc    Instantly verify current user's provider account
+// @route   POST /api/users/instant-verify-provider
+// @access  Private
+export const instantVerifyProvider = async (req, res, next) => {
+  try {
+    let provider = await dbStore.getProviderByUserId(req.user._id);
+    if (!provider) {
+      provider = await dbStore.saveServiceProvider(req.user._id, {
+        business_name: `${req.user.name}'s Pro Services`,
+        location: 'Dhaka (Metro Area)',
+        verification_status: 'verified',
+      });
+    }
+
+    const updated = await dbStore.updateProviderVerification(provider._id, 'verified');
+    await dbStore.updateUser(req.user._id, { role: 'provider' });
+
+    await dbStore.createNotification({
+      user_id: req.user._id,
+      title: 'Partner Account Verified!',
+      message: 'Congratulations! Your FIXIT service partner account has been approved and verified.',
+      type: 'verification',
+    });
+
+    res.json({
+      success: true,
+      message: 'Provider status verified successfully! Service listing is now unlocked.',
+      data: updated,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+

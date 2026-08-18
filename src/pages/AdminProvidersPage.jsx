@@ -9,6 +9,7 @@ import {
   Search,
 } from 'lucide-react';
 import api from '../api/axios.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useNotifications } from '../context/NotificationContext.jsx';
 import LoadingSpinner from '../components/common/LoadingSpinner.jsx';
 import EmptyState from '../components/common/EmptyState.jsx';
@@ -16,6 +17,7 @@ import Badge from '../components/common/Badge.jsx';
 import Pagination from '../components/common/Pagination.jsx';
 
 export default function AdminProvidersPage() {
+  const { user, refreshUser } = useAuth();
   const { addToast } = useNotifications();
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +52,7 @@ export default function AdminProvidersPage() {
       });
       if (res.data.success) {
         addToast(`Provider marked as ${newStatus}`, 'success');
+        if (refreshUser) refreshUser();
         fetchProviders();
       }
     } catch (err) {

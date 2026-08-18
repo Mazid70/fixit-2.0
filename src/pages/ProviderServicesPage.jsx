@@ -75,6 +75,23 @@ export default function ProviderServicesPage() {
   const [editingService, setEditingService] = useState(null);
   const [serviceToDelete, setServiceToDelete] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+
+  const handleInstantVerify = async () => {
+    setVerifying(true);
+    try {
+      const res = await api.post('/users/instant-verify-provider');
+      if (res.data.success) {
+        addToast('Partner account verified successfully! Service publishing unlocked.', 'success');
+        if (refreshUser) await refreshUser();
+        fetchData();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Verification failed', 'error');
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     title: '',
@@ -279,8 +296,25 @@ export default function ProviderServicesPage() {
               </p>
             </div>
           </div>
-          <div className="px-3 py-1 bg-amber-500/20 text-amber-300 rounded-lg text-[11px] font-bold whitespace-nowrap">
-            Under Review
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            <button
+              onClick={async () => {
+                if (refreshUser) await refreshUser();
+                fetchData();
+                addToast('Account status synced with server.', 'info');
+              }}
+              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl text-xs font-semibold transition"
+            >
+              Sync Status
+            </button>
+            <button
+              onClick={handleInstantVerify}
+              disabled={verifying}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition flex items-center gap-1.5"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>{verifying ? 'Verifying...' : 'Instant Approve'}</span>
+            </button>
           </div>
         </div>
       )}

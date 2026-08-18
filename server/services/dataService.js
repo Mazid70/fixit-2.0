@@ -569,42 +569,53 @@ export const dbStore = {
 
   // Provider methods
   async getProviderByUserId(userId) {
-    if (getDBStatus()) {
+    let sp = serviceProviders.find((p) => String(p.user_id) === String(userId));
+    if (sp) return sp;
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
       try {
-        const sp = await ServiceProvider.findOne({ user_id: userId }).lean();
-        if (sp) return { ...sp, _id: String(sp._id) };
+        const dbSp = await ServiceProvider.findOne({ user_id: userId }).lean();
+        if (dbSp) {
+          sp = { ...dbSp, _id: String(dbSp._id) };
+          serviceProviders.push(sp);
+          return sp;
+        }
       } catch (err) {}
     }
-    return serviceProviders.find((sp) => String(sp.user_id) === String(userId)) || null;
+    return null;
   },
 
   async getProviderById(id) {
-    if (getDBStatus()) {
+    let sp = serviceProviders.find((p) => String(p._id) === String(id));
+    if (sp) {
+      const u = users.find((usr) => String(usr._id) === String(sp.user_id));
+      return {
+        ...sp,
+        user: u ? { _id: u._id, name: u.name, email: u.email, phone: u.phone } : null,
+      };
+    }
+
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
       try {
-        let sp = null;
+        let dbSp = null;
         if (mongoose.isValidObjectId(id)) {
-          sp = await ServiceProvider.findById(id).lean();
+          dbSp = await ServiceProvider.findById(id).lean();
         } else {
-          sp = await ServiceProvider.findOne({ _id: id }).lean();
+          dbSp = await ServiceProvider.findOne({ _id: id }).lean();
         }
-        if (sp) {
+        if (dbSp) {
+          sp = { ...dbSp, _id: String(dbSp._id) };
+          serviceProviders.push(sp);
           const u = await this.findUserById(sp.user_id);
           return {
             ...sp,
-            _id: String(sp._id),
             user: u ? { _id: u._id, name: u.name, email: u.email, phone: u.phone } : null,
           };
         }
       } catch (err) {}
     }
 
-    const sp = serviceProviders.find((p) => String(p._id) === String(id));
-    if (!sp) return null;
-    const u = users.find((usr) => String(usr._id) === String(sp.user_id));
-    return {
-      ...sp,
-      user: u ? { _id: u._id, name: u.name, email: u.email, phone: u.phone } : null,
-    };
+    return null;
   },
 
   async saveServiceProvider(userId, data) {
@@ -629,16 +640,14 @@ export const dbStore = {
       serviceProviders.push(sp);
     }
 
-    if (getDBStatus()) {
-      try {
-        await ServiceProvider.findOneAndUpdate(
-          { user_id: userId },
-          { ...data, updated_at: new Date() },
-          { upsert: true, new: true }
-        );
-      } catch (err) {
-        console.warn('MongoDB ServiceProvider save note:', err.message);
-      }
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      ServiceProvider.findOneAndUpdate(
+        { user_id: userId },
+        { ...data, updated_at: new Date() },
+        { upsert: true, new: true }
+      ).catch((err) => {
+        console.warn('Background ServiceProvider save note:', err.message);
+      });
     }
 
     return sp;
@@ -648,43 +657,56 @@ export const dbStore = {
     let sp = serviceProviders.find(
       (p) => String(p._id) === String(idOrUserId) || String(p.user_id) === String(idOrUserId)
     );
+
+    if (!sp && getDBStatus() && mongoose.connection.readyState === 1) {
+      try {
+        let dbSp = null;
+        if (mongoose.isValidObjectId(idOrUserId)) {
+          dbSp = await ServiceProvider.findById(idOrUserId).lean();
+        } else {
+          dbSp = await ServiceProvider.findOne({ user_id: idOrUserId }).lean();
+        }
+        if (dbSp) {
+          sp = { ...dbSp, _id: String(dbSp._id) };
+          serviceProviders.push(sp);
+        }
+      } catch (e) {}
+    }
+
     if (!sp) return null;
 
     sp.verification_status = status;
     sp.updated_at = new Date();
 
+    const u = users.find((usr) => String(usr._id) === String(sp.user_id));
     // If verified, ensure the user role is provider
     if (status === 'verified') {
-      const u = users.find((usr) => String(usr._id) === String(sp.user_id));
       if (u) {
         u.role = 'provider';
       }
-      if (getDBStatus()) {
-        try {
-          await User.findOneAndUpdate({ _id: sp.user_id }, { role: 'provider' });
-        } catch (e) {}
+      if (getDBStatus() && mongoose.connection.readyState === 1) {
+        User.findOneAndUpdate({ _id: sp.user_id }, { role: 'provider' }).catch(() => {});
       }
     }
 
-    if (getDBStatus()) {
-      try {
-        if (mongoose.isValidObjectId(sp._id)) {
-          await ServiceProvider.findByIdAndUpdate(sp._id, {
-            verification_status: status,
-            updated_at: new Date(),
-          });
-        } else {
-          await ServiceProvider.findOneAndUpdate(
-            { _id: sp._id },
-            { verification_status: status, updated_at: new Date() }
-          );
-        }
-      } catch (err) {
-        console.warn('MongoDB provider verification update note:', err.message);
+    if (getDBStatus() && mongoose.connection.readyState === 1) {
+      if (mongoose.isValidObjectId(sp._id)) {
+        ServiceProvider.findByIdAndUpdate(sp._id, {
+          verification_status: status,
+          updated_at: new Date(),
+        }).catch(() => {});
+      } else {
+        ServiceProvider.findOneAndUpdate(
+          { user_id: sp.user_id },
+          { verification_status: status, updated_at: new Date() }
+        ).catch(() => {});
       }
     }
 
-    return this.getProviderById(sp._id);
+    return {
+      ...sp,
+      user: u ? { _id: u._id, name: u.name, email: u.email, phone: u.phone } : null,
+    };
   },
 
   async getAllProviders() {
